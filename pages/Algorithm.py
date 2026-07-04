@@ -11,7 +11,7 @@ try:
     with st.container(border=True):
         #st.markdown("行列生成のデモページに戻ることができます。")
         st.page_link(
-            "demo_app2.py",
+            "demo_app.py",
             label="デモページに戻る",
             icon="📘",
         )
