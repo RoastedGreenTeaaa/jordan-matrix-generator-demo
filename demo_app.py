@@ -1,9 +1,12 @@
-# demo_app.py
-# Jordan標準形に関する問題生成デモ（最新版評価関数を反映した最小版）
+# Jordan標準形に関する問題生成デモ
 #
 # ローカル実行:
 #   pip install -r requirements.txt
 #   streamlit run demo_app.py
+#
+# マルチページ構成:
+#   demo_app.py              # デモ本体
+#   pages/Algorithm.py       # アルゴリズム説明ページ
 
 import random
 from typing import Tuple, List
@@ -17,14 +20,11 @@ import matplotlib.pyplot as plt
 # 評価値
 # -----------------------------
 def evaluate_matrix(A: np.ndarray, best_zero: int, zero_condition: str) -> dict:
-    """行列Aの評価値を計算する。
-
-    評価値は「問題としての扱いにくさ」を表す。
-    小さいほど，演習問題として扱いやすい行列とみなす。
-
-    最新版 matrix_generator2.py の A_data() に合わせて，
-    F_total = F_abs + F_excess + F_sparse + F_zero
-    として計算する。
+    """行列Aの評価値を計算する．
+       評価値は「問題としての扱いにくさ」を表す．
+       小さいほど，演習問題として扱いやすい行列とみなす．
+          F_total = F_abs + F_excess + F_sparse + F_zero
+       として計算
     """
     n = A.shape[0]
 
@@ -82,12 +82,11 @@ def evaluate_matrix(A: np.ndarray, best_zero: int, zero_condition: str) -> dict:
 # 基本行列
 # -----------------------------
 def elementary_matrices(i: int, j: int, n: int) -> Tuple[List[np.ndarray], List[np.ndarray], List[str]]:
-    """基本行列とその逆行列を返す。
-
-    R(+1): 第j成分に第i成分を加える型
-    R(-1): 第j成分から第i成分を引く型
-    D(-1): 第i成分を -1 倍
-    T    : i と j を入れ替える
+    """基本行列とその逆行列を返す．
+       R(+1): 第j成分に第i成分を加える型
+       R(-1): 第j成分から第i成分を引く型
+       D(-1): 第i成分を -1 倍
+       T    : i と j を入れ替える
     """
     R_plus = np.eye(n, dtype=int)
     R_minus = np.eye(n, dtype=int)
@@ -111,13 +110,123 @@ def elementary_matrices(i: int, j: int, n: int) -> Tuple[List[np.ndarray], List[
 
 
 def apply_similarity(A: np.ndarray, L: np.ndarray, R: np.ndarray) -> np.ndarray:
-    """A -> L A R を計算する。ここで R = L^{-1}。"""
     return (L @ A @ R).astype(int)
+
 
 
 # -----------------------------
 # 探索本体
 # -----------------------------
+def _zero_condition_to_eva_type(zero_condition: str) -> int:
+    if zero_condition == "ちょうど":
+        return 0
+    if zero_condition == "以上":
+        return 1
+    if zero_condition == "以下":
+        return 2
+    return 3
+
+
+def A_data(A: np.ndarray, size: int, Best_0: int, eva_type: int):
+    sum_eva = 0
+    sum_zero = 0
+    sum_excess = 0
+    count_many_0 = 0
+    diff_0 = 0
+
+    for n in range(size):
+        for m in range(size):
+            if A[n, m] == 0:
+                sum_zero += 1
+            elif abs(A[n, m]) > 10:
+                sum_excess += abs(A[n, m]) - 10
+
+    sum_excess_eva = sum_excess * 3
+    A_abs = np.sum(np.abs(A))
+
+    for n in range(size):
+        if np.count_nonzero(A[n, :]) == 1:
+            count_many_0 += 1
+    for m in range(size):
+        if np.count_nonzero(A[:, m]) == 1:
+            count_many_0 += 1
+
+    many_0_eva = count_many_0 * size * 10
+
+    diff_0 = abs(Best_0 - sum_zero) ** 3
+    if eva_type == 0:
+        diff_0 *= 5
+    elif eva_type == 1:
+        if Best_0 <= sum_zero:
+            pass
+        else:
+            diff_0 *= 5
+    elif eva_type == 2:
+        if Best_0 >= sum_zero:
+            pass
+        else:
+            diff_0 *= 5
+    elif eva_type == 3:
+        diff_0 = 0
+
+    sum_eva = A_abs + sum_excess_eva + many_0_eva + diff_0
+
+    return sum_eva, sum_zero, A_abs, sum_excess_eva, many_0_eva, diff_0
+
+
+def set_Q(i: int, j: int, size: int):
+    R, R_, D, T = [np.eye(size, dtype=int) for _ in range(4)]
+
+    R[i, j] = 1
+    R_[i, j] = -1
+    D[i, i] = -1
+    T[i, i] = T[j, j] = 0
+    T[i, j] = T[j, i] = 1
+
+    Q = [R, R_, D, T]
+    q = []
+
+    for m in Q:
+        n = np.linalg.inv(m)
+        n = np.array(n, dtype=int)
+        q.append(n)
+
+    return Q, q
+
+
+def eva_con(x, A: np.ndarray, size: int, Best_0: int, eva_type: int):
+    eva_plus_list = []
+    eva_minus_list = []
+    eva_place_list = []
+
+    for l in range(size):
+        if l != x[0]:
+            eva_place_list.append((x[0], l))
+        if l != x[1]:
+            eva_place_list.append((l, x[1]))
+
+    for k in range(size):
+        if k != x[0]:
+            row_Q = set_Q(x[0], k, size)
+
+            A_row_plus = row_Q[0][0] @ A @ row_Q[1][0]
+            eva_plus_list.append(A_data(A_row_plus, size, Best_0, eva_type)[0])
+
+            A_row_minus = row_Q[0][1] @ A @ row_Q[1][1]
+            eva_minus_list.append(A_data(A_row_minus, size, Best_0, eva_type)[0])
+
+        if k != x[1]:
+            col_Q = set_Q(k, x[1], size)
+
+            A_col_plus = col_Q[0][0] @ A @ col_Q[1][0]
+            eva_plus_list.append(A_data(A_col_plus, size, Best_0, eva_type)[0])
+
+            A_col_minus = col_Q[0][1] @ A @ col_Q[1][1]
+            eva_minus_list.append(A_data(A_col_minus, size, Best_0, eva_type)[0])
+
+    return eva_plus_list, eva_minus_list, eva_place_list
+
+
 class Solver:
     def __init__(
         self,
@@ -127,84 +236,126 @@ class Solver:
         zero_condition: str,
         random_steps: int | None = None,
     ):
-        self.J = J.astype(int)
         self.A = J.astype(int).copy()
-        self.n = J.shape[0]
-        self.best_zero = best_zero
-        self.zero_condition = zero_condition
+        self.size = J.shape[0]
+        self.Best_0 = best_zero
+        self.eva_type = _zero_condition_to_eva_type(zero_condition)
+
         self.rng = random.Random(seed)
+        random.seed(seed)
+        np.random.seed(seed)
 
-        self.Q = np.eye(self.n, dtype=int)
-        self.Q_inv = np.eye(self.n, dtype=int)
+        self.Q = np.eye(self.size, dtype=int)
+        self.q = np.eye(self.size, dtype=int)
 
-        self.random_steps = random_steps if random_steps is not None else self.n * 5
-        self.A_history = [self.A.copy()]
-        self.eval_history = [evaluate_matrix(self.A, self.best_zero, self.zero_condition)]
+        self.history = {
+            "A_list": [self.A.copy()],
+            "Q_list": [self.Q.copy()],
+            "q_list": [self.q.copy()],
+        }
+
+        self.zero_condition = zero_condition
+        self.random_steps = self.size * 5  
+
+    @property
+    def Q_inv(self) -> np.ndarray:
+        return self.q
+
+    @property
+    def A_history(self) -> list[np.ndarray]:
+        return self.history["A_list"]
+
+    @property
+    def eval_history(self) -> list[dict]:
+        return [
+            evaluate_matrix(A, self.Best_0, self.zero_condition)
+            for A in self.history["A_list"]
+        ]
 
     def run_random(self) -> np.ndarray:
-        """最初にランダムな基本行列で相似変換を行う。"""
-        # 最新版と同様に，R(+1), R(-1) を主に選ぶ。
-        weights = [45, 45, 9, 1]  # R(+1), R(-1), D, T
+        total = 0
+        total_last = self.size * 5
 
-        for _ in range(self.random_steps):
-            i = self.rng.randrange(self.n)
-            j = self.rng.randrange(self.n)
-            while i == j:
-                j = self.rng.randrange(self.n)
+        while total < total_last:
+            v = self.rng.randint(0, self.size - 1)
+            w = self.rng.randint(0, self.size - 1)
+            while v == w:
+                w = self.rng.randint(0, self.size - 1)
 
-            left, right, _ = elementary_matrices(i, j, self.n)
-            k = self.rng.choices([0, 1, 2, 3], weights=weights, k=1)[0]
+            x = random.choices(
+                [0, 1, 2, 3],
+                k=1,
+                weights=[45, 45, 9, 1],
+            )[0]
 
-            L = left[k]
-            R = right[k]
+            left, right = set_Q(v, w, self.size)
+            L = left[x]
+            R = right[x]
 
-            self.A = apply_similarity(self.A, L, R)
             self.Q = L @ self.Q
-            self.Q_inv = self.Q_inv @ R
+            self.q = self.q @ R
 
-            self.A_history.append(self.A.copy())
-            self.eval_history.append(evaluate_matrix(self.A, self.best_zero, self.zero_condition))
+            self.A = L @ self.A @ R
+            self.history["A_list"].append(self.A.copy())
+            self.history["Q_list"].append(self.Q.copy())
+            self.history["q_list"].append(self.q.copy())
+
+            total += 1
 
         return self.A.copy()
 
-    def run_greedy_search(self, max_iterations: int = 200) -> np.ndarray:
-        """評価値が最も下がる R(+1) または R(-1) を貪欲に選ぶ。"""
-        current_eval = evaluate_matrix(self.A, self.best_zero, self.zero_condition)["F_total"]
+    def run_greedy_search(self) -> np.ndarray:
+        last_eva = A_data(self.A, self.size, self.Best_0, self.eva_type)[0]
 
-        for _ in range(max_iterations):
-            best_eval = current_eval
-            best_move = None
+        while True:
+            check_eva = last_eva
+            check_Q = None
+            y = 0
 
-            for i in range(self.n):
-                for j in range(self.n):
-                    if i == j:
-                        continue
+            for o in range(self.size):
+                for p in range(self.size):
+                    plus_val, minus_val, position = eva_con(
+                        [o, p],
+                        self.A,
+                        self.size,
+                        self.Best_0,
+                        self.eva_type,
+                    )
 
-                    left, right, names = elementary_matrices(i, j, self.n)
+                    sub_plus = min(plus_val)
+                    sub_minus = min(minus_val)
 
-                    # 評価値を下げる探索では，最新版と同様に R(+1), R(-1) のみ使う。
-                    for k in [0, 1]:
-                        candidate_A = apply_similarity(self.A, left[k], right[k])
-                        candidate_eval = evaluate_matrix(
-                            candidate_A, self.best_zero, self.zero_condition
-                        )["F_total"]
+                    if sub_plus < sub_minus:
+                        sub_place = plus_val.index(sub_plus)
+                        sub_eva = sub_plus
+                        sub_Q = position[sub_place]
+                        sub_y = 0
+                    else:
+                        sub_place = minus_val.index(sub_minus)
+                        sub_eva = sub_minus
+                        sub_Q = position[sub_place]
+                        sub_y = 1
 
-                        if candidate_eval < best_eval:
-                            best_eval = candidate_eval
-                            best_move = (left[k], right[k], candidate_A, names[k], i, j)
+                    if sub_eva < check_eva:
+                        check_eva = sub_eva
+                        check_Q = sub_Q
+                        y = sub_y
 
-            # これ以上評価値が下がらなければ探索終了
-            if best_move is None:
+            if check_eva == last_eva:
                 break
+            else:
+                last_eva = check_eva
+                left, right = set_Q(check_Q[0], check_Q[1], self.size)
+                L = left[y]
+                R = right[y]
 
-            L, R, new_A, _, _, _ = best_move
-            self.A = new_A
-            self.Q = L @ self.Q
-            self.Q_inv = self.Q_inv @ R
+                self.Q = L @ self.Q
+                self.q = self.q @ R
 
-            current_eval = best_eval
-            self.A_history.append(self.A.copy())
-            self.eval_history.append(evaluate_matrix(self.A, self.best_zero, self.zero_condition))
+                self.A = L @ self.A @ R
+                self.history["A_list"].append(self.A.copy())
+                self.history["Q_list"].append(self.Q.copy())
+                self.history["q_list"].append(self.q.copy())
 
         return self.A.copy()
 
@@ -307,7 +458,7 @@ def plot_evaluation_history(eval_history: list[dict]):
 def main():
     st.set_page_config(page_title="Jordan Matrix Generator Demo", layout="centered")
 
-    st.title("Jordan標準形に関する問題生成デモ")
+    st.title("Jordan標準形を求める問題生成のデモ")
 
     st.markdown(
         r"""
@@ -317,16 +468,14 @@ $$
 A = QJQ^{-1}
 $$
 
-を用いて，$J$ と相似な整数行列 $A$ を生成するデモです．
+を用いて，$J$ を答えとする整数行列 $A$ を生成するデモです．
 
-生成された行列について，成分の大きさ，10を超える成分，
-非ゼロ成分が少ない行・列，0成分の個数に基づく評価値を計算し，
+生成された行列について，成分の大きさ，$10$ を超える成分，
+非ゼロ成分が少ない行・列，$0$ 成分の個数などに基づく評価値を計算し，
 評価値が小さくなるように探索します．
 """
     )
 
-    # pages/1_algorithm.py を作った場合に使う。
-    # ファイルが存在しない状態でも demo_app.py 単体では動くように，try で囲む。
     try:
         with st.container(border=True):
             st.markdown("アルゴリズムの概要や評価関数の定義は，別ページにまとめています．")
@@ -355,19 +504,34 @@ $$
         step=1,
     )
 
-    zero_condition = st.sidebar.radio(
-        "0成分の条件",
-        options=["ちょうど", "以上", "以下", "指定なし"],
+    zero_condition_label = st.sidebar.radio(
+        "0成分の個数について",
+        options=[f"ちょうど {best_zero} 個を目指す", 
+        f"{best_zero} 個以上を目指す", 
+        f"{best_zero} 個以下を目指す", "指定なし"],
         index=0,
     )
 
-    random_steps = st.sidebar.number_input(
-        "初期ランダム変換の回数",
-        min_value=0,
-        max_value=100,
-        value=n * 5,
-        step=1,
-    )
+    if zero_condition_label == f"ちょうど {best_zero} 個を目指す":
+        zero_condition = "ちょうど"
+    elif zero_condition_label == f"{best_zero} 個以上を目指す":
+        zero_condition = "以上"
+    elif zero_condition_label == f"{best_zero} 個以下を目指す":
+        zero_condition = "以下"
+    else:
+        zero_condition = "指定なし"
+
+
+    #random_steps = st.sidebar.number_input(
+    #    "初期ランダム変換の回数",
+    #    min_value=n * 5,
+    #    max_value=n * 5,
+    #    value=n * 5,
+    #    step=1,
+    #    disabled=True,
+    #    help="matrix_generator2.py のアルゴリズムに合わせて n×5 回で固定しています。",
+    #)
+    random_steps = n * 5
 
     with st.expander("Jordan標準形の入力", expanded=True):
         J = input_jordan_matrix(n)
@@ -393,10 +557,10 @@ $$
         st.subheader("初期ランダム変換後の行列")
         st.latex(latex_matrix(A_random, "A'"))
 
-        st.subheader("最終的に生成された行列")
+        st.subheader("最終結果（問題として出題する行列）")
         st.latex(latex_matrix(A_final, "A"))
 
-        st.subheader("変換行列")
+        st.subheader("$Q^{-1}AQ = J$ を満たす正則行列")
         st.latex(latex_matrix(Q, "Q"))
 
         with st.expander("$Q^{-1}$ を表示する"):
@@ -418,7 +582,7 @@ $$
         #with st.expander("評価値の変化を表示する"):
         #    plot_evaluation_history(solver.eval_history)
 
-        with st.expander("変形後の行列履歴を表示する"):
+        with st.expander("変形後の履歴を表示する"):
             for k, A_k in enumerate(solver.A_history):
                 st.latex(latex_matrix(A_k, f"A_{{{k}}}"))
 
